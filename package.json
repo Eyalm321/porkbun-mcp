@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "MCP server for Porkbun API v3 — domain registration, DNS management, SSL certificates, and more",
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   },
   "main": "dist/index.js",
   "bin": {

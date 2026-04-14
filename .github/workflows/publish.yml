@@ -71,9 +71,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Publish to npm (unscoped)
+      - name: Publish to npm
         run: |
-          jq '.name = "porkbun-mcp" | del(.publishConfig)' package.json > package-npm.json
+          jq 'del(.publishConfig)' package.json > package-npm.json
           mv package-npm.json package.json
           npm publish --access public
         env:

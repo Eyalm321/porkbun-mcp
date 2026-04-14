@@ -7,7 +7,7 @@ MCP server for the [Porkbun API v3](https://porkbun.com/api/json/v3/documentatio
 ### npm
 
 ```bash
-npm install -g porkbun-mcp
+npm install -g @eyalm321/porkbun-mcp
 ```
 
 ### GitHub Packages
@@ -36,7 +36,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
   "mcpServers": {
     "porkbun": {
       "command": "npx",
-      "args": ["-y", "porkbun-mcp"],
+      "args": ["-y", "@eyalm321/porkbun-mcp"],
       "env": {
         "PORKBUN_API_KEY": "pk1_...",
         "PORKBUN_SECRET_API_KEY": "sk1_..."
