@@ -1,14 +1,10 @@
 {
-  "name": "@eyalm321/porkbun-mcp",
+  "name": "porkbun-mcp-server",
   "version": "1.0.0",
   "description": "MCP server for Porkbun API v3 — domain registration, DNS management, SSL certificates, and more",
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
-    "access": "public"
-  },
   "main": "dist/index.js",
   "bin": {
-    "porkbun-mcp": "dist/index.js"
+    "porkbun-mcp-server": "dist/index.js"
   },
   "files": [
     "dist/**/*",

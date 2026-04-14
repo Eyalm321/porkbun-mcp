@@ -48,7 +48,10 @@ jobs:
         run: npm run build
 
       - name: Publish to GitHub Packages
-        run: npm publish
+        run: |
+          jq '.name = "@eyalm321/porkbun-mcp-server" | .publishConfig.registry = "https://npm.pkg.github.com"' package.json > package-gh.json
+          mv package-gh.json package.json
+          npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
