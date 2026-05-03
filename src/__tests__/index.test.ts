@@ -41,8 +41,8 @@ describe("Tool Registration", () => {
     }
   });
 
-  it("registers the expected total number of tools (32)", () => {
-    expect(allTools.length).toBe(32);
+  it("registers the expected total number of tools (33)", () => {
+    expect(allTools.length).toBe(33);
   });
 
   it("each module exports a non-empty array", () => {

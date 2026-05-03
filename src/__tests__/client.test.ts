@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { porkbunRequest, porkbunRequestNoAuth } from "../client.js";
+import { porkbunRequest, porkbunRequestNoAuth, listConfiguredUsers } from "../client.js";
 
 describe("porkbunRequest", () => {
   const mockFetch = vi.fn();
@@ -105,6 +105,80 @@ describe("porkbunRequest", () => {
       "Porkbun API error: Something went wrong"
     );
   });
+
+  describe("multi-user credentials", () => {
+    it("resolves user-specific credentials when user is given", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping", undefined, "alice");
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.apikey).toBe("pk1_alice");
+      expect(callBody.secretapikey).toBe("sk1_alice");
+    });
+
+    it("uppercases user identifier for env var lookup", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping", undefined, "bob");
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.apikey).toBe("pk1_bob");
+    });
+
+    it("normalizes non-alphanumerics in user identifier to underscore", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_ACME_CORP", "pk1_acme");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_ACME_CORP", "sk1_acme");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping", undefined, "acme-corp");
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.apikey).toBe("pk1_acme");
+      expect(callBody.secretapikey).toBe("sk1_acme");
+    });
+
+    it("throws when user-specific API key is missing", async () => {
+      await expect(porkbunRequest("/ping", undefined, "ghost")).rejects.toThrow(
+        "PORKBUN_API_KEY_GHOST environment variable is not set"
+      );
+    });
+
+    it("throws when user-specific secret key is missing", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
+      await expect(porkbunRequest("/ping", undefined, "partial")).rejects.toThrow(
+        "PORKBUN_SECRET_API_KEY_PARTIAL environment variable is not set"
+      );
+    });
+
+    it("default credentials are used when no user is given even if user-specific ones exist", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping");
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.apikey).toBe("pk1_test");
+      expect(callBody.secretapikey).toBe("sk1_test");
+    });
+  });
 });
 
 describe("porkbunRequestNoAuth", () => {
@@ -173,5 +247,48 @@ describe("porkbunRequestNoAuth", () => {
     await expect(porkbunRequestNoAuth("/apikey/request")).rejects.toThrow(
       "Porkbun API error (RATE_LIMIT_EXCEEDED): Rate limit exceeded."
     );
+  });
+});
+
+describe("listConfiguredUsers", () => {
+  beforeEach(() => {
+    // Strip any inherited PORKBUN_* env vars so tests are deterministic.
+    for (const k of Object.keys(process.env)) {
+      if (k.startsWith("PORKBUN_")) vi.stubEnv(k, "");
+    }
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("returns empty list when nothing is configured", () => {
+    expect(listConfiguredUsers()).toEqual([]);
+  });
+
+  it("includes 'default' when both default keys are set", () => {
+    vi.stubEnv("PORKBUN_API_KEY", "pk1");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY", "sk1");
+    expect(listConfiguredUsers()).toContain("default");
+  });
+
+  it("excludes 'default' when only one of the default keys is set", () => {
+    vi.stubEnv("PORKBUN_API_KEY", "pk1");
+    expect(listConfiguredUsers()).not.toContain("default");
+  });
+
+  it("includes user-suffixed pairs (lowercased)", () => {
+    vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+    vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
+    const users = listConfiguredUsers();
+    expect(users).toContain("alice");
+    expect(users).toContain("bob");
+  });
+
+  it("excludes users with only an API key but no secret", () => {
+    vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
+    expect(listConfiguredUsers()).not.toContain("partial");
   });
 });

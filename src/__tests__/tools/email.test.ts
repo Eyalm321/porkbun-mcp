@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../client.js", () => ({
   porkbunRequest: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
   porkbunRequestNoAuth: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
+  listConfiguredUsers: vi.fn().mockReturnValue([]),
 }));
 
 import { porkbunRequest } from "../../client.js";
@@ -27,7 +28,15 @@ describe("emailTools", () => {
       expect(mockRequest).toHaveBeenCalledWith("/email/setPassword", {
         emailAddress: "user@example.com",
         password: "NewPass123!",
-      });
+      }, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ emailAddress: "user@example.com", password: "NewPass123!", user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/email/setPassword", {
+        emailAddress: "user@example.com",
+        password: "NewPass123!",
+      }, "alice");
     });
   });
 });

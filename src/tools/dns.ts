@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { porkbunRequest } from "../client.js";
+import { userField } from "./_shared.js";
 
 const dnsTypeEnum = z.enum(["A", "AAAA", "MX", "CNAME", "ALIAS", "TXT", "NS", "SRV", "TLSA", "CAA", "SSHFP"]);
 
@@ -9,9 +10,10 @@ export const dnsTools = [
     description: "Retrieve all editable DNS records for a domain. SOA and default NS records are excluded.",
     inputSchema: z.object({
       domain: z.string().describe("The domain name (e.g. 'example.com')."),
+      user: userField,
     }),
-    handler: async (args: { domain: string }) => {
-      return porkbunRequest(`/dns/retrieve/${args.domain}`);
+    handler: async (args: { domain: string; user?: string }) => {
+      return porkbunRequest(`/dns/retrieve/${args.domain}`, undefined, args.user);
     },
   },
   {
@@ -20,9 +22,10 @@ export const dnsTools = [
     inputSchema: z.object({
       domain: z.string().describe("The domain name."),
       id: z.string().describe("Numeric DNS record ID."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; id: string }) => {
-      return porkbunRequest(`/dns/retrieve/${args.domain}/${args.id}`);
+    handler: async (args: { domain: string; id: string; user?: string }) => {
+      return porkbunRequest(`/dns/retrieve/${args.domain}/${args.id}`, undefined, args.user);
     },
   },
   {
@@ -32,10 +35,11 @@ export const dnsTools = [
       domain: z.string().describe("The domain name."),
       type: z.string().describe("DNS record type (A, AAAA, CNAME, MX, TXT, etc.)."),
       subdomain: z.string().optional().describe("Subdomain portion only. Omit for root domain records."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; type: string; subdomain?: string }) => {
+    handler: async (args: { domain: string; type: string; subdomain?: string; user?: string }) => {
       const sub = args.subdomain || "";
-      return porkbunRequest(`/dns/retrieveByNameType/${args.domain}/${args.type}/${sub}`);
+      return porkbunRequest(`/dns/retrieveByNameType/${args.domain}/${args.type}/${sub}`, undefined, args.user);
     },
   },
   {
@@ -49,10 +53,11 @@ export const dnsTools = [
       ttl: z.number().optional().describe("Time to live in seconds. Minimum is typically 600."),
       prio: z.number().optional().describe("Priority for MX and SRV records. Defaults to 0."),
       notes: z.string().optional().describe("Optional notes (not served in DNS)."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; type: string; content: string; name?: string; ttl?: number; prio?: number; notes?: string }) => {
-      const { domain, ...body } = args;
-      return porkbunRequest(`/dns/create/${domain}`, body as Record<string, unknown>);
+    handler: async (args: { domain: string; type: string; content: string; name?: string; ttl?: number; prio?: number; notes?: string; user?: string }) => {
+      const { domain, user, ...body } = args;
+      return porkbunRequest(`/dns/create/${domain}`, body as Record<string, unknown>, user);
     },
   },
   {
@@ -67,10 +72,11 @@ export const dnsTools = [
       ttl: z.number().optional().describe("Time to live in seconds."),
       prio: z.number().optional().describe("Priority for MX/SRV records."),
       notes: z.string().optional().describe("Notes. Pass empty string to clear; omit to leave unchanged."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; id: string; type: string; content: string; name?: string; ttl?: number; prio?: number; notes?: string }) => {
-      const { domain, id, ...body } = args;
-      return porkbunRequest(`/dns/edit/${domain}/${id}`, body as Record<string, unknown>);
+    handler: async (args: { domain: string; id: string; type: string; content: string; name?: string; ttl?: number; prio?: number; notes?: string; user?: string }) => {
+      const { domain, id, user, ...body } = args;
+      return porkbunRequest(`/dns/edit/${domain}/${id}`, body as Record<string, unknown>, user);
     },
   },
   {
@@ -84,11 +90,12 @@ export const dnsTools = [
       ttl: z.number().optional().describe("Time to live in seconds."),
       prio: z.number().optional().describe("Priority."),
       notes: z.string().optional().describe("Notes. Pass empty string to clear; omit to leave unchanged."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; type: string; subdomain?: string; content: string; ttl?: number; prio?: number; notes?: string }) => {
-      const { domain, type, subdomain, ...body } = args;
+    handler: async (args: { domain: string; type: string; subdomain?: string; content: string; ttl?: number; prio?: number; notes?: string; user?: string }) => {
+      const { domain, type, subdomain, user, ...body } = args;
       const sub = subdomain || "";
-      return porkbunRequest(`/dns/editByNameType/${domain}/${type}/${sub}`, body as Record<string, unknown>);
+      return porkbunRequest(`/dns/editByNameType/${domain}/${type}/${sub}`, body as Record<string, unknown>, user);
     },
   },
   {
@@ -97,9 +104,10 @@ export const dnsTools = [
     inputSchema: z.object({
       domain: z.string().describe("The domain name."),
       id: z.string().describe("Numeric DNS record ID."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; id: string }) => {
-      return porkbunRequest(`/dns/delete/${args.domain}/${args.id}`);
+    handler: async (args: { domain: string; id: string; user?: string }) => {
+      return porkbunRequest(`/dns/delete/${args.domain}/${args.id}`, undefined, args.user);
     },
   },
   {
@@ -109,10 +117,11 @@ export const dnsTools = [
       domain: z.string().describe("The domain name."),
       type: z.string().describe("DNS record type (e.g. 'A')."),
       subdomain: z.string().optional().describe("Subdomain portion. Omit for root domain."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; type: string; subdomain?: string }) => {
+    handler: async (args: { domain: string; type: string; subdomain?: string; user?: string }) => {
       const sub = args.subdomain || "";
-      return porkbunRequest(`/dns/deleteByNameType/${args.domain}/${args.type}/${sub}`);
+      return porkbunRequest(`/dns/deleteByNameType/${args.domain}/${args.type}/${sub}`, undefined, args.user);
     },
   },
   {
@@ -129,10 +138,11 @@ export const dnsTools = [
       keyDataProtocol: z.string().optional().describe("Key data protocol (optional)."),
       keyDataAlgo: z.string().optional().describe("Key data algorithm (optional)."),
       keyDataPubKey: z.string().optional().describe("Key data public key in base64 (optional)."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; keyTag: string; alg: string; digestType: string; digest: string; maxSigLife?: string; keyDataFlags?: string; keyDataProtocol?: string; keyDataAlgo?: string; keyDataPubKey?: string }) => {
-      const { domain, ...body } = args;
-      return porkbunRequest(`/dns/createDnssecRecord/${domain}`, body as Record<string, unknown>);
+    handler: async (args: { domain: string; keyTag: string; alg: string; digestType: string; digest: string; maxSigLife?: string; keyDataFlags?: string; keyDataProtocol?: string; keyDataAlgo?: string; keyDataPubKey?: string; user?: string }) => {
+      const { domain, user, ...body } = args;
+      return porkbunRequest(`/dns/createDnssecRecord/${domain}`, body as Record<string, unknown>, user);
     },
   },
   {
@@ -140,9 +150,10 @@ export const dnsTools = [
     description: "Retrieve DNSSEC records associated with the domain at the registry.",
     inputSchema: z.object({
       domain: z.string().describe("The domain name."),
+      user: userField,
     }),
-    handler: async (args: { domain: string }) => {
-      return porkbunRequest(`/dns/getDnssecRecords/${args.domain}`);
+    handler: async (args: { domain: string; user?: string }) => {
+      return porkbunRequest(`/dns/getDnssecRecords/${args.domain}`, undefined, args.user);
     },
   },
   {
@@ -151,9 +162,10 @@ export const dnsTools = [
     inputSchema: z.object({
       domain: z.string().describe("The domain name."),
       keytag: z.string().describe("The DNSSEC key tag value."),
+      user: userField,
     }),
-    handler: async (args: { domain: string; keytag: string }) => {
-      return porkbunRequest(`/dns/deleteDnssecRecord/${args.domain}/${args.keytag}`);
+    handler: async (args: { domain: string; keytag: string; user?: string }) => {
+      return porkbunRequest(`/dns/deleteDnssecRecord/${args.domain}/${args.keytag}`, undefined, args.user);
     },
   },
 ];

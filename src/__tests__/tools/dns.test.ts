@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../client.js", () => ({
   porkbunRequest: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
   porkbunRequestNoAuth: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
+  listConfiguredUsers: vi.fn().mockReturnValue([]),
 }));
 
 import { porkbunRequest } from "../../client.js";
@@ -24,12 +25,23 @@ describe("dnsTools", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("every tool accepts an optional user param", () => {
+    for (const tool of dnsTools) {
+      expect(tool.inputSchema.shape).toHaveProperty("user");
+    }
+  });
+
   describe("porkbun_dns_retrieve", () => {
     const tool = dnsTools.find((t) => t.name === "porkbun_dns_retrieve")!;
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieve/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieve/example.com", undefined, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ domain: "example.com", user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieve/example.com", undefined, "alice");
     });
   });
 
@@ -38,7 +50,7 @@ describe("dnsTools", () => {
 
     it("calls correct path with id", async () => {
       await tool.handler({ domain: "example.com", id: "123" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieve/example.com/123");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieve/example.com/123", undefined, undefined);
     });
   });
 
@@ -47,12 +59,12 @@ describe("dnsTools", () => {
 
     it("calls with subdomain", async () => {
       await tool.handler({ domain: "example.com", type: "A", subdomain: "www" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieveByNameType/example.com/A/www");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieveByNameType/example.com/A/www", undefined, undefined);
     });
 
     it("calls with empty subdomain for root", async () => {
       await tool.handler({ domain: "example.com", type: "A" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieveByNameType/example.com/A/");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/retrieveByNameType/example.com/A/", undefined, undefined);
     });
   });
 
@@ -63,14 +75,21 @@ describe("dnsTools", () => {
       await tool.handler({ domain: "example.com", type: "A", content: "1.2.3.4", name: "www", ttl: 600, prio: 0 });
       expect(mockRequest).toHaveBeenCalledWith("/dns/create/example.com", {
         type: "A", content: "1.2.3.4", name: "www", ttl: 600, prio: 0,
-      });
+      }, undefined);
     });
 
     it("passes minimal fields", async () => {
       await tool.handler({ domain: "example.com", type: "A", content: "1.2.3.4" });
       expect(mockRequest).toHaveBeenCalledWith("/dns/create/example.com", {
         type: "A", content: "1.2.3.4",
-      });
+      }, undefined);
+    });
+
+    it("forwards user without leaking it into body", async () => {
+      await tool.handler({ domain: "example.com", type: "A", content: "1.2.3.4", user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/dns/create/example.com", {
+        type: "A", content: "1.2.3.4",
+      }, "alice");
     });
   });
 
@@ -81,7 +100,14 @@ describe("dnsTools", () => {
       await tool.handler({ domain: "example.com", id: "123", type: "A", content: "5.6.7.8" });
       expect(mockRequest).toHaveBeenCalledWith("/dns/edit/example.com/123", {
         type: "A", content: "5.6.7.8",
-      });
+      }, undefined);
+    });
+
+    it("forwards user without leaking it into body", async () => {
+      await tool.handler({ domain: "example.com", id: "123", type: "A", content: "5.6.7.8", user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/dns/edit/example.com/123", {
+        type: "A", content: "5.6.7.8",
+      }, "alice");
     });
   });
 
@@ -90,12 +116,12 @@ describe("dnsTools", () => {
 
     it("passes content with subdomain", async () => {
       await tool.handler({ domain: "example.com", type: "A", subdomain: "www", content: "5.6.7.8" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/editByNameType/example.com/A/www", { content: "5.6.7.8" });
+      expect(mockRequest).toHaveBeenCalledWith("/dns/editByNameType/example.com/A/www", { content: "5.6.7.8" }, undefined);
     });
 
     it("uses empty subdomain for root", async () => {
       await tool.handler({ domain: "example.com", type: "A", content: "5.6.7.8" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/editByNameType/example.com/A/", { content: "5.6.7.8" });
+      expect(mockRequest).toHaveBeenCalledWith("/dns/editByNameType/example.com/A/", { content: "5.6.7.8" }, undefined);
     });
   });
 
@@ -104,7 +130,7 @@ describe("dnsTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com", id: "123" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/delete/example.com/123");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/delete/example.com/123", undefined, undefined);
     });
   });
 
@@ -113,7 +139,7 @@ describe("dnsTools", () => {
 
     it("calls with subdomain", async () => {
       await tool.handler({ domain: "example.com", type: "A", subdomain: "www" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/deleteByNameType/example.com/A/www");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/deleteByNameType/example.com/A/www", undefined, undefined);
     });
   });
 
@@ -133,7 +159,7 @@ describe("dnsTools", () => {
         alg: "13",
         digestType: "2",
         digest: "ABCD1234",
-      });
+      }, undefined);
     });
   });
 
@@ -142,7 +168,7 @@ describe("dnsTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/getDnssecRecords/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/getDnssecRecords/example.com", undefined, undefined);
     });
   });
 
@@ -151,7 +177,7 @@ describe("dnsTools", () => {
 
     it("calls correct path with keytag", async () => {
       await tool.handler({ domain: "example.com", keytag: "12345" });
-      expect(mockRequest).toHaveBeenCalledWith("/dns/deleteDnssecRecord/example.com/12345");
+      expect(mockRequest).toHaveBeenCalledWith("/dns/deleteDnssecRecord/example.com/12345", undefined, undefined);
     });
   });
 });

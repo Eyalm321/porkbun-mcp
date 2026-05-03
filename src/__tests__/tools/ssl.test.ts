@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../client.js", () => ({
   porkbunRequest: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
   porkbunRequestNoAuth: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
+  listConfiguredUsers: vi.fn().mockReturnValue([]),
 }));
 
 import { porkbunRequest } from "../../client.js";
@@ -24,7 +25,12 @@ describe("sslTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/ssl/retrieve/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/ssl/retrieve/example.com", undefined, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ domain: "example.com", user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/ssl/retrieve/example.com", undefined, "alice");
     });
   });
 });

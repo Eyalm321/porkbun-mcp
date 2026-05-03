@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../client.js", () => ({
   porkbunRequest: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
   porkbunRequestNoAuth: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
+  listConfiguredUsers: vi.fn().mockReturnValue([]),
 }));
 
 import { porkbunRequest } from "../../client.js";
@@ -24,12 +25,17 @@ describe("marketplaceTools", () => {
 
     it("calls with no extra params", async () => {
       await tool.handler({});
-      expect(mockRequest).toHaveBeenCalledWith("/marketplace/getAll", {});
+      expect(mockRequest).toHaveBeenCalledWith("/marketplace/getAll", {}, undefined);
     });
 
     it("passes start and limit", async () => {
       await tool.handler({ start: 0, limit: 500 });
-      expect(mockRequest).toHaveBeenCalledWith("/marketplace/getAll", { start: 0, limit: 500 });
+      expect(mockRequest).toHaveBeenCalledWith("/marketplace/getAll", { start: 0, limit: 500 }, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/marketplace/getAll", {}, "alice");
     });
   });
 });

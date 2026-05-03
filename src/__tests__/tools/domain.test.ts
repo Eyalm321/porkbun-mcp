@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../../client.js", () => ({
   porkbunRequest: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
   porkbunRequestNoAuth: vi.fn().mockResolvedValue({ status: "SUCCESS" }),
+  listConfiguredUsers: vi.fn().mockReturnValue([]),
 }));
 
 import { porkbunRequest } from "../../client.js";
@@ -24,17 +25,28 @@ describe("domainTools", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("every tool accepts an optional user param", () => {
+    for (const tool of domainTools) {
+      expect(tool.inputSchema.shape).toHaveProperty("user");
+    }
+  });
+
   describe("porkbun_domain_list_all", () => {
     const tool = domainTools.find((t) => t.name === "porkbun_domain_list_all")!;
 
     it("calls /domain/listAll with no extra params", async () => {
       await tool.handler({});
-      expect(mockRequest).toHaveBeenCalledWith("/domain/listAll", {});
+      expect(mockRequest).toHaveBeenCalledWith("/domain/listAll", {}, undefined);
     });
 
     it("passes start and includeLabels", async () => {
       await tool.handler({ start: 1000, includeLabels: "yes" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/listAll", { start: 1000, includeLabels: "yes" });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/listAll", { start: 1000, includeLabels: "yes" }, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ user: "alice" });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/listAll", {}, "alice");
     });
   });
 
@@ -43,7 +55,12 @@ describe("domainTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/getNs/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/getNs/example.com", undefined, undefined);
+    });
+
+    it("forwards user param", async () => {
+      await tool.handler({ domain: "example.com", user: "bob" });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/getNs/example.com", undefined, "bob");
     });
   });
 
@@ -52,7 +69,7 @@ describe("domainTools", () => {
 
     it("passes nameservers", async () => {
       await tool.handler({ domain: "example.com", ns: ["ns1.test.com", "ns2.test.com"] });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/updateNs/example.com", { ns: ["ns1.test.com", "ns2.test.com"] });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/updateNs/example.com", { ns: ["ns1.test.com", "ns2.test.com"] }, undefined);
     });
   });
 
@@ -61,12 +78,12 @@ describe("domainTools", () => {
 
     it("uses domain in path when provided", async () => {
       await tool.handler({ domain: "example.com", status: "on" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/updateAutoRenew/example.com", { status: "on" });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/updateAutoRenew/example.com", { status: "on" }, undefined);
     });
 
     it("uses trailing slash when no domain", async () => {
       await tool.handler({ status: "off", domains: ["a.com", "b.com"] });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/updateAutoRenew/", { status: "off", domains: ["a.com", "b.com"] });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/updateAutoRenew/", { status: "off", domains: ["a.com", "b.com"] }, undefined);
     });
   });
 
@@ -75,7 +92,7 @@ describe("domainTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "test.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/checkDomain/test.com");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/checkDomain/test.com", undefined, undefined);
     });
   });
 
@@ -84,7 +101,7 @@ describe("domainTools", () => {
 
     it("passes cost and agreeToTerms", async () => {
       await tool.handler({ domain: "new.com", cost: 973, agreeToTerms: "yes" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/create/new.com", { cost: 973, agreeToTerms: "yes" });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/create/new.com", { cost: 973, agreeToTerms: "yes" }, undefined);
     });
   });
 
@@ -106,7 +123,7 @@ describe("domainTools", () => {
         type: "permanent",
         includePath: "yes",
         wildcard: "no",
-      });
+      }, undefined);
     });
   });
 
@@ -115,7 +132,7 @@ describe("domainTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/getUrlForwarding/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/getUrlForwarding/example.com", undefined, undefined);
     });
   });
 
@@ -124,7 +141,7 @@ describe("domainTools", () => {
 
     it("calls correct path with id", async () => {
       await tool.handler({ domain: "example.com", id: "12345" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/deleteUrlForward/example.com/12345");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/deleteUrlForward/example.com/12345", undefined, undefined);
     });
   });
 
@@ -133,7 +150,7 @@ describe("domainTools", () => {
 
     it("passes IPs", async () => {
       await tool.handler({ domain: "example.com", subdomain: "ns1", ips: ["1.2.3.4"] });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/createGlue/example.com/ns1", { ips: ["1.2.3.4"] });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/createGlue/example.com/ns1", { ips: ["1.2.3.4"] }, undefined);
     });
   });
 
@@ -142,7 +159,7 @@ describe("domainTools", () => {
 
     it("passes IPs", async () => {
       await tool.handler({ domain: "example.com", subdomain: "ns1", ips: ["5.6.7.8"] });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/updateGlue/example.com/ns1", { ips: ["5.6.7.8"] });
+      expect(mockRequest).toHaveBeenCalledWith("/domain/updateGlue/example.com/ns1", { ips: ["5.6.7.8"] }, undefined);
     });
   });
 
@@ -151,7 +168,7 @@ describe("domainTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com", subdomain: "ns1" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/deleteGlue/example.com/ns1");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/deleteGlue/example.com/ns1", undefined, undefined);
     });
   });
 
@@ -160,7 +177,7 @@ describe("domainTools", () => {
 
     it("calls correct path", async () => {
       await tool.handler({ domain: "example.com" });
-      expect(mockRequest).toHaveBeenCalledWith("/domain/getGlue/example.com");
+      expect(mockRequest).toHaveBeenCalledWith("/domain/getGlue/example.com", undefined, undefined);
     });
   });
 });

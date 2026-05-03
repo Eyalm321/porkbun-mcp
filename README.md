@@ -1,6 +1,6 @@
 # porkbun-mcp
 
-MCP server for the [Porkbun API v3](https://porkbun.com/api/json/v3/documentation) — 32 tools covering domain registration, DNS management, SSL certificates, email hosting, marketplace, and more.
+MCP server for the [Porkbun API v3](https://porkbun.com/api/json/v3/documentation) — 33 tools covering domain registration, DNS management, SSL certificates, email hosting, marketplace, and more. Supports multiple Porkbun accounts in a single server instance.
 
 ## Installation
 
@@ -18,7 +18,7 @@ npm install -g @eyalm321/porkbun-mcp-server --registry=https://npm.pkg.github.co
 
 ## Configuration
 
-Set the following environment variables:
+### Single account (default)
 
 ```bash
 export PORKBUN_API_KEY="pk1_..."
@@ -26,6 +26,38 @@ export PORKBUN_SECRET_API_KEY="sk1_..."
 ```
 
 Get your API keys at [porkbun.com/account/api](https://porkbun.com/account/api).
+
+### Multiple accounts
+
+Define additional credential pairs with a `_<USER>` suffix. The user identifier is uppercased; non-alphanumeric characters become underscores.
+
+```bash
+# Default account (used when no `user` is passed)
+export PORKBUN_API_KEY="pk1_..."
+export PORKBUN_SECRET_API_KEY="sk1_..."
+
+# Per-user accounts
+export PORKBUN_API_KEY_ALICE="pk1_..."
+export PORKBUN_SECRET_API_KEY_ALICE="sk1_..."
+
+export PORKBUN_API_KEY_ACME_CORP="pk1_..."
+export PORKBUN_SECRET_API_KEY_ACME_CORP="sk1_..."
+```
+
+Then pass `user` to any authenticated tool:
+
+```jsonc
+// Use the default credentials
+{ "name": "porkbun_domain_list_all", "arguments": {} }
+
+// Use Alice's credentials
+{ "name": "porkbun_domain_list_all", "arguments": { "user": "alice" } }
+
+// Identifiers are case-insensitive; `acme-corp` matches PORKBUN_API_KEY_ACME_CORP
+{ "name": "porkbun_domain_list_all", "arguments": { "user": "acme-corp" } }
+```
+
+Use `porkbun_list_users` to discover which user identifiers are configured in the running server.
 
 ## Usage with Claude Desktop
 
@@ -39,18 +71,21 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
       "args": ["-y", "porkbun-mcp-server"],
       "env": {
         "PORKBUN_API_KEY": "pk1_...",
-        "PORKBUN_SECRET_API_KEY": "sk1_..."
+        "PORKBUN_SECRET_API_KEY": "sk1_...",
+        "PORKBUN_API_KEY_ALICE": "pk1_...",
+        "PORKBUN_SECRET_API_KEY_ALICE": "sk1_..."
       }
     }
   }
 }
 ```
 
-## Tools (32)
+## Tools (33)
 
 ### Utility
 - `porkbun_ping` — Test credentials and get IP
 - `porkbun_get_ip` — Get public IP (no auth)
+- `porkbun_list_users` — List configured user identifiers
 
 ### Pricing
 - `porkbun_get_pricing` — Get domain pricing for all TLDs (no auth)
@@ -95,6 +130,8 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 
 ### Marketplace
 - `porkbun_marketplace_list` — List marketplace domains
+
+Every authenticated tool accepts an optional `user` parameter that selects which `PORKBUN_API_KEY_<USER>` / `PORKBUN_SECRET_API_KEY_<USER>` credential pair to use. Omit it to use the default `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY`.
 
 ## Development
 
