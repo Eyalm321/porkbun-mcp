@@ -1,6 +1,6 @@
 {
   "name": "porkbun-mcp-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server for Porkbun API v3 — domain registration, DNS management, SSL certificates, and more",
   "main": "dist/index.js",
   "bin": {

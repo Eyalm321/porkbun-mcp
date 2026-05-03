@@ -12,7 +12,7 @@ import { marketplaceTools } from "./tools/marketplace.js";
 
 const server = new McpServer({
   name: "porkbun-mcp",
-  version: "1.1.0",
+  version: "1.2.0",
 });
 
 const allTools = [

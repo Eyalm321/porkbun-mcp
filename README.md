@@ -18,7 +18,7 @@ npm install -g @eyalm321/porkbun-mcp-server --registry=https://npm.pkg.github.co
 
 ## Configuration
 
-### Single account (default)
+### Single account
 
 ```bash
 export PORKBUN_API_KEY="pk1_..."
@@ -27,21 +27,16 @@ export PORKBUN_SECRET_API_KEY="sk1_..."
 
 Get your API keys at [porkbun.com/account/api](https://porkbun.com/account/api).
 
-### Multiple accounts
+### Multiple accounts — `PORKBUN_ACCOUNTS`
 
-Define additional credential pairs with a `_<USER>` suffix. The user identifier is uppercased; non-alphanumeric characters become underscores.
+Set `PORKBUN_ACCOUNTS` to a JSON array of account objects. Each entry has a `user` identifier plus `PORKBUN_API_KEY` and `PORKBUN_SECRET_API_KEY` (or the shorthand aliases `apiKey` and `secretApiKey`).
 
 ```bash
-# Default account (used when no `user` is passed)
-export PORKBUN_API_KEY="pk1_..."
-export PORKBUN_SECRET_API_KEY="sk1_..."
-
-# Per-user accounts
-export PORKBUN_API_KEY_ALICE="pk1_..."
-export PORKBUN_SECRET_API_KEY_ALICE="sk1_..."
-
-export PORKBUN_API_KEY_ACME_CORP="pk1_..."
-export PORKBUN_SECRET_API_KEY_ACME_CORP="sk1_..."
+export PORKBUN_ACCOUNTS='[
+  { "user": "default",   "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." },
+  { "user": "alice",     "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." },
+  { "user": "acme-corp", "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." }
+]'
 ```
 
 Then pass `user` to any authenticated tool:
@@ -53,11 +48,15 @@ Then pass `user` to any authenticated tool:
 // Use Alice's credentials
 { "name": "porkbun_domain_list_all", "arguments": { "user": "alice" } }
 
-// Identifiers are case-insensitive; `acme-corp` matches PORKBUN_API_KEY_ACME_CORP
-{ "name": "porkbun_domain_list_all", "arguments": { "user": "acme-corp" } }
+// User identifiers are case-insensitive
+{ "name": "porkbun_domain_list_all", "arguments": { "user": "Acme-Corp" } }
 ```
 
-Use `porkbun_list_users` to discover which user identifiers are configured in the running server.
+Resolution rules:
+
+- The default account (used when `user` is omitted) comes from the `PORKBUN_ACCOUNTS` entry with `user: "default"`, or — if no such entry exists — the top-level `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` env vars.
+- A `user` argument matches a `PORKBUN_ACCOUNTS` entry by lowercased `user`.
+- Use `porkbun_list_users` to discover which user identifiers are configured.
 
 ## Usage with Claude Desktop
 
@@ -70,10 +69,24 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
       "command": "npx",
       "args": ["-y", "porkbun-mcp-server"],
       "env": {
+        "PORKBUN_ACCOUNTS": "[{\"user\":\"default\",\"PORKBUN_API_KEY\":\"pk1_...\",\"PORKBUN_SECRET_API_KEY\":\"sk1_...\"},{\"user\":\"alice\",\"PORKBUN_API_KEY\":\"pk1_...\",\"PORKBUN_SECRET_API_KEY\":\"sk1_...\"}]"
+      }
+    }
+  }
+}
+```
+
+Or, for a single account, the simpler form:
+
+```json
+{
+  "mcpServers": {
+    "porkbun": {
+      "command": "npx",
+      "args": ["-y", "porkbun-mcp-server"],
+      "env": {
         "PORKBUN_API_KEY": "pk1_...",
-        "PORKBUN_SECRET_API_KEY": "sk1_...",
-        "PORKBUN_API_KEY_ALICE": "pk1_...",
-        "PORKBUN_SECRET_API_KEY_ALICE": "sk1_..."
+        "PORKBUN_SECRET_API_KEY": "sk1_..."
       }
     }
   }
@@ -131,7 +144,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 ### Marketplace
 - `porkbun_marketplace_list` — List marketplace domains
 
-Every authenticated tool accepts an optional `user` parameter that selects which `PORKBUN_API_KEY_<USER>` / `PORKBUN_SECRET_API_KEY_<USER>` credential pair to use. Omit it to use the default `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY`.
+Every authenticated tool accepts an optional `user` parameter that selects which entry from `PORKBUN_ACCOUNTS` to use. Omit it to use the default account.
 
 ## Development
 

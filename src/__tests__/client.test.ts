@@ -1,5 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { porkbunRequest, porkbunRequestNoAuth, listConfiguredUsers } from "../client.js";
+import {
+  porkbunRequest,
+  porkbunRequestNoAuth,
+  listConfiguredUsers,
+  _resetAccountsCache,
+} from "../client.js";
+
+// Strip any inherited PORKBUN_* env vars so tests run in a clean baseline.
+function clearPorkbunEnv() {
+  for (const k of Object.keys(process.env)) {
+    if (k.startsWith("PORKBUN_")) vi.stubEnv(k, "");
+  }
+}
 
 describe("porkbunRequest", () => {
   const mockFetch = vi.fn();
@@ -7,26 +19,24 @@ describe("porkbunRequest", () => {
   beforeEach(() => {
     mockFetch.mockReset();
     vi.stubGlobal("fetch", mockFetch);
+    clearPorkbunEnv();
     vi.stubEnv("PORKBUN_API_KEY", "pk1_test");
     vi.stubEnv("PORKBUN_SECRET_API_KEY", "sk1_test");
+    _resetAccountsCache();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
+    _resetAccountsCache();
   });
 
-  it("throws if PORKBUN_API_KEY is not set", async () => {
+  it("throws when no default credentials are configured", async () => {
     vi.stubEnv("PORKBUN_API_KEY", "");
-    await expect(porkbunRequest("/ping")).rejects.toThrow(
-      "PORKBUN_API_KEY environment variable is not set"
-    );
-  });
-
-  it("throws if PORKBUN_SECRET_API_KEY is not set", async () => {
     vi.stubEnv("PORKBUN_SECRET_API_KEY", "");
+    _resetAccountsCache();
     await expect(porkbunRequest("/ping")).rejects.toThrow(
-      "PORKBUN_SECRET_API_KEY environment variable is not set"
+      /No default Porkbun credentials configured/
     );
   });
 
@@ -106,10 +116,16 @@ describe("porkbunRequest", () => {
     );
   });
 
-  describe("multi-user credentials", () => {
-    it("resolves user-specific credentials when user is given", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+  describe("PORKBUN_ACCOUNTS multi-user", () => {
+    it("resolves credentials for a named user from PORKBUN_ACCOUNTS", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
+          { user: "bob", PORKBUN_API_KEY: "pk1_bob", PORKBUN_SECRET_API_KEY: "sk1_bob" },
+        ])
+      );
+      _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ status: "SUCCESS" }),
@@ -117,56 +133,56 @@ describe("porkbunRequest", () => {
 
       await porkbunRequest("/ping", undefined, "alice");
 
-      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.apikey).toBe("pk1_alice");
-      expect(callBody.secretapikey).toBe("sk1_alice");
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_alice");
+      expect(body.secretapikey).toBe("sk1_alice");
     });
 
-    it("uppercases user identifier for env var lookup", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
+    it("matches user identifier case-insensitively", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "AliceCo", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
+        ])
+      );
+      _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ status: "SUCCESS" }),
       });
 
-      await porkbunRequest("/ping", undefined, "bob");
+      await porkbunRequest("/ping", undefined, "aliceco");
 
-      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.apikey).toBe("pk1_bob");
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_alice");
     });
 
-    it("normalizes non-alphanumerics in user identifier to underscore", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_ACME_CORP", "pk1_acme");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_ACME_CORP", "sk1_acme");
+    it("accepts apiKey / secretApiKey aliases inside the JSON object", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([{ user: "alice", apiKey: "pk1_alice", secretApiKey: "sk1_alice" }])
+      );
+      _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ status: "SUCCESS" }),
       });
 
-      await porkbunRequest("/ping", undefined, "acme-corp");
+      await porkbunRequest("/ping", undefined, "alice");
 
-      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.apikey).toBe("pk1_acme");
-      expect(callBody.secretapikey).toBe("sk1_acme");
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_alice");
+      expect(body.secretapikey).toBe("sk1_alice");
     });
 
-    it("throws when user-specific API key is missing", async () => {
-      await expect(porkbunRequest("/ping", undefined, "ghost")).rejects.toThrow(
-        "PORKBUN_API_KEY_GHOST environment variable is not set"
+    it("default account from PORKBUN_ACCOUNTS overrides top-level env vars", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "default", PORKBUN_API_KEY: "pk1_acct_default", PORKBUN_SECRET_API_KEY: "sk1_acct_default" },
+        ])
       );
-    });
-
-    it("throws when user-specific secret key is missing", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
-      await expect(porkbunRequest("/ping", undefined, "partial")).rejects.toThrow(
-        "PORKBUN_SECRET_API_KEY_PARTIAL environment variable is not set"
-      );
-    });
-
-    it("default credentials are used when no user is given even if user-specific ones exist", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+      _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ status: "SUCCESS" }),
@@ -174,9 +190,81 @@ describe("porkbunRequest", () => {
 
       await porkbunRequest("/ping");
 
-      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(callBody.apikey).toBe("pk1_test");
-      expect(callBody.secretapikey).toBe("sk1_test");
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_acct_default");
+    });
+
+    it("falls back to top-level env vars when PORKBUN_ACCOUNTS has no default", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
+        ])
+      );
+      _resetAccountsCache();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping");
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_test");
+    });
+
+    it("throws a helpful error when an unknown user is requested", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
+        ])
+      );
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping", undefined, "ghost")).rejects.toThrow(
+        /No Porkbun credentials configured for user "ghost"/
+      );
+    });
+
+    it("throws when PORKBUN_ACCOUNTS is not valid JSON", async () => {
+      vi.stubEnv("PORKBUN_ACCOUNTS", "not-json");
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping")).rejects.toThrow(
+        /PORKBUN_ACCOUNTS is not valid JSON/
+      );
+    });
+
+    it("throws when PORKBUN_ACCOUNTS is not an array", async () => {
+      vi.stubEnv("PORKBUN_ACCOUNTS", JSON.stringify({ user: "alice" }));
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping")).rejects.toThrow(
+        /PORKBUN_ACCOUNTS must be a JSON array/
+      );
+    });
+
+    it("throws when an entry is missing api key fields", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([{ user: "alice", PORKBUN_API_KEY: "pk1_alice" }])
+      );
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping", undefined, "alice")).rejects.toThrow(
+        /missing PORKBUN_API_KEY or PORKBUN_SECRET_API_KEY/
+      );
+    });
+
+    it("throws when PORKBUN_ACCOUNTS has duplicate users", async () => {
+      vi.stubEnv(
+        "PORKBUN_ACCOUNTS",
+        JSON.stringify([
+          { user: "alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
+          { user: "Alice", PORKBUN_API_KEY: "b", PORKBUN_SECRET_API_KEY: "y" },
+        ])
+      );
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping")).rejects.toThrow(
+        /duplicate user "alice"/
+      );
     });
   });
 });
@@ -252,43 +340,58 @@ describe("porkbunRequestNoAuth", () => {
 
 describe("listConfiguredUsers", () => {
   beforeEach(() => {
-    // Strip any inherited PORKBUN_* env vars so tests are deterministic.
-    for (const k of Object.keys(process.env)) {
-      if (k.startsWith("PORKBUN_")) vi.stubEnv(k, "");
-    }
+    clearPorkbunEnv();
+    _resetAccountsCache();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    _resetAccountsCache();
   });
 
   it("returns empty list when nothing is configured", () => {
     expect(listConfiguredUsers()).toEqual([]);
   });
 
-  it("includes 'default' when both default keys are set", () => {
+  it("includes 'default' when top-level env vars are set", () => {
     vi.stubEnv("PORKBUN_API_KEY", "pk1");
     vi.stubEnv("PORKBUN_SECRET_API_KEY", "sk1");
+    _resetAccountsCache();
     expect(listConfiguredUsers()).toContain("default");
   });
 
-  it("excludes 'default' when only one of the default keys is set", () => {
+  it("excludes 'default' when only one of the top-level keys is set", () => {
     vi.stubEnv("PORKBUN_API_KEY", "pk1");
+    _resetAccountsCache();
     expect(listConfiguredUsers()).not.toContain("default");
   });
 
-  it("includes user-suffixed pairs (lowercased)", () => {
-    vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
-    vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
-    vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
-    vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
+  it("includes users from PORKBUN_ACCOUNTS (lowercased)", () => {
+    vi.stubEnv(
+      "PORKBUN_ACCOUNTS",
+      JSON.stringify([
+        { user: "Alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
+        { user: "BOB", PORKBUN_API_KEY: "b", PORKBUN_SECRET_API_KEY: "y" },
+      ])
+    );
+    _resetAccountsCache();
     const users = listConfiguredUsers();
     expect(users).toContain("alice");
     expect(users).toContain("bob");
   });
 
-  it("excludes users with only an API key but no secret", () => {
-    vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
-    expect(listConfiguredUsers()).not.toContain("partial");
+  it("merges PORKBUN_ACCOUNTS users with top-level default", () => {
+    vi.stubEnv("PORKBUN_API_KEY", "pk1");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY", "sk1");
+    vi.stubEnv(
+      "PORKBUN_ACCOUNTS",
+      JSON.stringify([
+        { user: "alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
+      ])
+    );
+    _resetAccountsCache();
+    const users = listConfiguredUsers();
+    expect(users).toContain("default");
+    expect(users).toContain("alice");
   });
 });
