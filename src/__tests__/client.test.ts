@@ -116,6 +116,47 @@ describe("porkbunRequest", () => {
     );
   });
 
+  describe("suffixed env-var multi-user", () => {
+    it("resolves credentials from PORKBUN_API_KEY_<USER> pair", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
+      _resetAccountsCache();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping", undefined, "alice");
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_alice");
+      expect(body.secretapikey).toBe("sk1_alice");
+    });
+
+    it("matches user identifier case-insensitively against env suffix", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
+      vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
+      _resetAccountsCache();
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "SUCCESS" }),
+      });
+
+      await porkbunRequest("/ping", undefined, "BOB");
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.apikey).toBe("pk1_bob");
+    });
+
+    it("ignores PORKBUN_API_KEY_<USER> with no matching secret", async () => {
+      vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping", undefined, "partial")).rejects.toThrow(
+        /No Porkbun credentials configured for user "partial"/
+      );
+    });
+  });
+
   describe("PORKBUN_ACCOUNTS multi-user", () => {
     it("resolves credentials for a named user from PORKBUN_ACCOUNTS", async () => {
       vi.stubEnv(
@@ -374,6 +415,17 @@ describe("listConfiguredUsers", () => {
         { user: "BOB", PORKBUN_API_KEY: "b", PORKBUN_SECRET_API_KEY: "y" },
       ])
     );
+    _resetAccountsCache();
+    const users = listConfiguredUsers();
+    expect(users).toContain("alice");
+    expect(users).toContain("bob");
+  });
+
+  it("includes users from suffixed env-var pairs", () => {
+    vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1");
+    vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1");
+    vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1");
     _resetAccountsCache();
     const users = listConfiguredUsers();
     expect(users).toContain("alice");

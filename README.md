@@ -27,9 +27,23 @@ export PORKBUN_SECRET_API_KEY="sk1_..."
 
 Get your API keys at [porkbun.com/account/api](https://porkbun.com/account/api).
 
-### Multiple accounts — `PORKBUN_ACCOUNTS`
+### Multiple accounts
 
-Set `PORKBUN_ACCOUNTS` to a JSON array of account objects. Each entry has a `user` identifier plus `PORKBUN_API_KEY` and `PORKBUN_SECRET_API_KEY` (or the shorthand aliases `apiKey` and `secretApiKey`).
+You can configure additional accounts using either approach (mix and match if you want):
+
+**Option A: suffixed env vars** (no quoting hassle)
+
+```bash
+export PORKBUN_API_KEY_ALICE="pk1_..."
+export PORKBUN_SECRET_API_KEY_ALICE="sk1_..."
+
+export PORKBUN_API_KEY_ACME_CORP="pk1_..."
+export PORKBUN_SECRET_API_KEY_ACME_CORP="sk1_..."
+```
+
+The user identifier is the suffix, lowercased — so `PORKBUN_API_KEY_ACME_CORP` is selected with `"user": "acme_corp"` (or `"acme-corp"`, since matching is case- and separator-insensitive at lookup time).
+
+**Option B: `PORKBUN_ACCOUNTS` JSON array**
 
 ```bash
 export PORKBUN_ACCOUNTS='[
@@ -38,6 +52,8 @@ export PORKBUN_ACCOUNTS='[
   { "user": "acme-corp", "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." }
 ]'
 ```
+
+The `apiKey` / `secretApiKey` shorthand aliases are also accepted inside the JSON.
 
 Then pass `user` to any authenticated tool:
 
@@ -54,8 +70,9 @@ Then pass `user` to any authenticated tool:
 
 Resolution rules:
 
-- The default account (used when `user` is omitted) comes from the `PORKBUN_ACCOUNTS` entry with `user: "default"`, or — if no such entry exists — the top-level `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` env vars.
-- A `user` argument matches a `PORKBUN_ACCOUNTS` entry by lowercased `user`.
+- The default account (used when `user` is omitted) is `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY`, or the `PORKBUN_ACCOUNTS` entry with `user: "default"`.
+- A `user` argument matches a configured account by lowercased identifier.
+- Sources are merged — if the same user appears in multiple sources, `PORKBUN_ACCOUNTS` wins over suffixed env vars.
 - Use `porkbun_list_users` to discover which user identifiers are configured.
 
 ## Usage with Claude Desktop
@@ -69,24 +86,12 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
       "command": "npx",
       "args": ["-y", "porkbun-mcp-server"],
       "env": {
-        "PORKBUN_ACCOUNTS": "[{\"user\":\"default\",\"PORKBUN_API_KEY\":\"pk1_...\",\"PORKBUN_SECRET_API_KEY\":\"sk1_...\"},{\"user\":\"alice\",\"PORKBUN_API_KEY\":\"pk1_...\",\"PORKBUN_SECRET_API_KEY\":\"sk1_...\"}]"
-      }
-    }
-  }
-}
-```
-
-Or, for a single account, the simpler form:
-
-```json
-{
-  "mcpServers": {
-    "porkbun": {
-      "command": "npx",
-      "args": ["-y", "porkbun-mcp-server"],
-      "env": {
         "PORKBUN_API_KEY": "pk1_...",
-        "PORKBUN_SECRET_API_KEY": "sk1_..."
+        "PORKBUN_SECRET_API_KEY": "sk1_...",
+        "PORKBUN_API_KEY_ALICE": "pk1_...",
+        "PORKBUN_SECRET_API_KEY_ALICE": "sk1_...",
+        "PORKBUN_API_KEY_ACME_CORP": "pk1_...",
+        "PORKBUN_SECRET_API_KEY_ACME_CORP": "sk1_..."
       }
     }
   }

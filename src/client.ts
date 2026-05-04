@@ -15,21 +15,59 @@ interface ParsedAccount {
 }
 
 let cachedAccounts: Map<string, Account> | null = null;
-let cachedSource: string | undefined;
+let cachedSnapshot: string | undefined;
+
+function envSnapshot(): string {
+  // Used to detect env changes between calls (mainly in tests). Hashing the
+  // raw values is fine because env vars are short.
+  const parts: string[] = [];
+  for (const k of Object.keys(process.env).sort()) {
+    if (k === "PORKBUN_ACCOUNTS" || k.startsWith("PORKBUN_API_KEY") || k.startsWith("PORKBUN_SECRET_API_KEY")) {
+      parts.push(`${k}=${process.env[k] ?? ""}`);
+    }
+  }
+  return parts.join("\n");
+}
 
 /**
- * Parse `PORKBUN_ACCOUNTS` (a JSON array) into a map keyed by lowercased
- * user identifier. Each object should contain `user`, `PORKBUN_API_KEY`,
- * and `PORKBUN_SECRET_API_KEY`. `apiKey` / `secretApiKey` are also accepted
- * as aliases. The default account (no `user` field, or `user: "default"`)
- * is keyed under "default".
+ * Build the account map from all supported configuration sources, merged in
+ * this order (later sources override earlier ones for the same user):
+ *
+ *   1. Top-level PORKBUN_API_KEY / PORKBUN_SECRET_API_KEY → "default" account
+ *   2. Suffixed PORKBUN_API_KEY_<USER> / PORKBUN_SECRET_API_KEY_<USER>
+ *   3. PORKBUN_ACCOUNTS JSON array (highest priority)
+ *
+ * User identifiers are lowercased throughout.
  */
 function parseAccounts(): Map<string, Account> {
-  const raw = process.env.PORKBUN_ACCOUNTS;
-  if (cachedAccounts && cachedSource === raw) return cachedAccounts;
+  const snapshot = envSnapshot();
+  if (cachedAccounts && cachedSnapshot === snapshot) return cachedAccounts;
 
   const map = new Map<string, Account>();
 
+  // 1. Default account from top-level env vars
+  if (process.env.PORKBUN_API_KEY && process.env.PORKBUN_SECRET_API_KEY) {
+    map.set("default", {
+      user: "default",
+      apiKey: process.env.PORKBUN_API_KEY,
+      secretApiKey: process.env.PORKBUN_SECRET_API_KEY,
+    });
+  }
+
+  // 2. Suffixed env-var pairs: PORKBUN_API_KEY_<USER> / PORKBUN_SECRET_API_KEY_<USER>
+  for (const envKey of Object.keys(process.env)) {
+    const m = envKey.match(/^PORKBUN_API_KEY_(.+)$/);
+    if (!m) continue;
+    const suffix = m[1];
+    const apiKey = process.env[envKey];
+    const secretApiKey = process.env[`PORKBUN_SECRET_API_KEY_${suffix}`];
+    if (!apiKey || !secretApiKey) continue;
+    const user = suffix.toLowerCase();
+    map.set(user, { user, apiKey, secretApiKey });
+  }
+
+  // 3. PORKBUN_ACCOUNTS JSON array (overrides anything above)
+  const raw = process.env.PORKBUN_ACCOUNTS;
   if (raw && raw.trim()) {
     let parsed: unknown;
     try {
@@ -42,6 +80,7 @@ function parseAccounts(): Map<string, Account> {
     if (!Array.isArray(parsed)) {
       throw new Error("PORKBUN_ACCOUNTS must be a JSON array of account objects");
     }
+    const seen = new Set<string>();
     for (const [i, entry] of parsed.entries()) {
       if (!entry || typeof entry !== "object") {
         throw new Error(`PORKBUN_ACCOUNTS[${i}] is not an object`);
@@ -55,29 +94,16 @@ function parseAccounts(): Map<string, Account> {
         );
       }
       const user = (acc.user ?? "default").trim().toLowerCase();
-      if (map.has(user)) {
+      if (seen.has(user)) {
         throw new Error(`PORKBUN_ACCOUNTS contains duplicate user "${user}"`);
       }
+      seen.add(user);
       map.set(user, { user, apiKey, secretApiKey });
     }
   }
 
-  // Top-level PORKBUN_API_KEY / PORKBUN_SECRET_API_KEY are the default if
-  // not already provided via PORKBUN_ACCOUNTS.
-  if (
-    !map.has("default") &&
-    process.env.PORKBUN_API_KEY &&
-    process.env.PORKBUN_SECRET_API_KEY
-  ) {
-    map.set("default", {
-      user: "default",
-      apiKey: process.env.PORKBUN_API_KEY,
-      secretApiKey: process.env.PORKBUN_SECRET_API_KEY,
-    });
-  }
-
   cachedAccounts = map;
-  cachedSource = raw;
+  cachedSnapshot = snapshot;
   return map;
 }
 
@@ -89,7 +115,7 @@ function resolveAccount(user?: string): Account {
     if (!user || key === "default") {
       throw new Error(
         "No default Porkbun credentials configured. Set PORKBUN_API_KEY and " +
-          "PORKBUN_SECRET_API_KEY, or include a default entry in PORKBUN_ACCOUNTS."
+          "PORKBUN_SECRET_API_KEY (or supply a default entry via PORKBUN_ACCOUNTS)."
       );
     }
     const known = [...accounts.keys()].join(", ") || "(none)";
@@ -113,7 +139,7 @@ export function listConfiguredUsers(): string[] {
 /** Test-only: clear the parsed-accounts cache. */
 export function _resetAccountsCache(): void {
   cachedAccounts = null;
-  cachedSource = undefined;
+  cachedSnapshot = undefined;
 }
 
 export async function porkbunRequest<T>(
