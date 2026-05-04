@@ -29,31 +29,22 @@ Get your API keys at [porkbun.com/account/api](https://porkbun.com/account/api).
 
 ### Multiple accounts
 
-You can configure additional accounts using either approach (mix and match if you want):
+Create a JSON file listing your accounts and point `PORKBUN_ACCOUNTS_FILE` at it:
 
-**Option A: suffixed env vars** (no quoting hassle)
-
-```bash
-export PORKBUN_API_KEY_ALICE="pk1_..."
-export PORKBUN_SECRET_API_KEY_ALICE="sk1_..."
-
-export PORKBUN_API_KEY_ACME_CORP="pk1_..."
-export PORKBUN_SECRET_API_KEY_ACME_CORP="sk1_..."
-```
-
-The user identifier is the suffix, lowercased — so `PORKBUN_API_KEY_ACME_CORP` is selected with `"user": "acme_corp"` (or `"acme-corp"`, since matching is case- and separator-insensitive at lookup time).
-
-**Option B: `PORKBUN_ACCOUNTS` JSON array**
-
-```bash
-export PORKBUN_ACCOUNTS='[
+```json
+// ~/.porkbun-accounts.json
+[
   { "user": "default",   "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." },
   { "user": "alice",     "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." },
   { "user": "acme-corp", "PORKBUN_API_KEY": "pk1_...", "PORKBUN_SECRET_API_KEY": "sk1_..." }
-]'
+]
 ```
 
-The `apiKey` / `secretApiKey` shorthand aliases are also accepted inside the JSON.
+```bash
+export PORKBUN_ACCOUNTS_FILE="$HOME/.porkbun-accounts.json"
+```
+
+The shorthand aliases `apiKey` and `secretApiKey` are also accepted inside the file.
 
 Then pass `user` to any authenticated tool:
 
@@ -70,9 +61,8 @@ Then pass `user` to any authenticated tool:
 
 Resolution rules:
 
-- The default account (used when `user` is omitted) is `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY`, or the `PORKBUN_ACCOUNTS` entry with `user: "default"`.
+- The default account (used when `user` is omitted) is `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY`, or — if defined — the entry in `PORKBUN_ACCOUNTS_FILE` with `user: "default"`.
 - A `user` argument matches a configured account by lowercased identifier.
-- Sources are merged — if the same user appears in multiple sources, `PORKBUN_ACCOUNTS` wins over suffixed env vars.
 - Use `porkbun_list_users` to discover which user identifiers are configured.
 
 ## Usage with Claude Desktop
@@ -88,15 +78,14 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
       "env": {
         "PORKBUN_API_KEY": "pk1_...",
         "PORKBUN_SECRET_API_KEY": "sk1_...",
-        "PORKBUN_API_KEY_ALICE": "pk1_...",
-        "PORKBUN_SECRET_API_KEY_ALICE": "sk1_...",
-        "PORKBUN_API_KEY_ACME_CORP": "pk1_...",
-        "PORKBUN_SECRET_API_KEY_ACME_CORP": "sk1_..."
+        "PORKBUN_ACCOUNTS_FILE": "/Users/you/.porkbun-accounts.json"
       }
     }
   }
 }
 ```
+
+`PORKBUN_ACCOUNTS_FILE` is optional — leave it out for a single-account setup.
 
 ## Tools (33)
 
@@ -149,7 +138,7 @@ Add to your Claude Desktop config (`claude_desktop_config.json`):
 ### Marketplace
 - `porkbun_marketplace_list` — List marketplace domains
 
-Every authenticated tool accepts an optional `user` parameter that selects which entry from `PORKBUN_ACCOUNTS` to use. Omit it to use the default account.
+Every authenticated tool accepts an optional `user` parameter that selects which account from `PORKBUN_ACCOUNTS_FILE` to use. Omit it to use the default account.
 
 ## Development
 

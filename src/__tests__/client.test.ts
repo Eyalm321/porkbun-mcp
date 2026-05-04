@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   porkbunRequest,
   porkbunRequestNoAuth,
@@ -116,56 +119,27 @@ describe("porkbunRequest", () => {
     );
   });
 
-  describe("suffixed env-var multi-user", () => {
-    it("resolves credentials from PORKBUN_API_KEY_<USER> pair", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1_alice");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1_alice");
-      _resetAccountsCache();
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: "SUCCESS" }),
-      });
+  describe("PORKBUN_ACCOUNTS_FILE multi-user", () => {
+    let tmp: string;
 
-      await porkbunRequest("/ping", undefined, "alice");
-
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.apikey).toBe("pk1_alice");
-      expect(body.secretapikey).toBe("sk1_alice");
+    beforeEach(() => {
+      tmp = mkdtempSync(join(tmpdir(), "porkbun-mcp-test-"));
     });
 
-    it("matches user identifier case-insensitively against env suffix", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1_bob");
-      vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1_bob");
-      _resetAccountsCache();
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: "SUCCESS" }),
-      });
-
-      await porkbunRequest("/ping", undefined, "BOB");
-
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.apikey).toBe("pk1_bob");
+    afterEach(() => {
+      rmSync(tmp, { recursive: true, force: true });
     });
 
-    it("ignores PORKBUN_API_KEY_<USER> with no matching secret", async () => {
-      vi.stubEnv("PORKBUN_API_KEY_PARTIAL", "pk1_partial");
-      _resetAccountsCache();
-      await expect(porkbunRequest("/ping", undefined, "partial")).rejects.toThrow(
-        /No Porkbun credentials configured for user "partial"/
-      );
-    });
-  });
-
-  describe("PORKBUN_ACCOUNTS multi-user", () => {
-    it("resolves credentials for a named user from PORKBUN_ACCOUNTS", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+    it("loads accounts from a JSON file", async () => {
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([
           { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
           { user: "bob", PORKBUN_API_KEY: "pk1_bob", PORKBUN_SECRET_API_KEY: "sk1_bob" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
@@ -180,12 +154,14 @@ describe("porkbunRequest", () => {
     });
 
     it("matches user identifier case-insensitively", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([
           { user: "AliceCo", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
@@ -198,11 +174,13 @@ describe("porkbunRequest", () => {
       expect(body.apikey).toBe("pk1_alice");
     });
 
-    it("accepts apiKey / secretApiKey aliases inside the JSON object", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+    it("accepts apiKey / secretApiKey aliases", async () => {
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([{ user: "alice", apiKey: "pk1_alice", secretApiKey: "sk1_alice" }])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
@@ -216,13 +194,15 @@ describe("porkbunRequest", () => {
       expect(body.secretapikey).toBe("sk1_alice");
     });
 
-    it("default account from PORKBUN_ACCOUNTS overrides top-level env vars", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+    it("default account in the file overrides top-level env vars", async () => {
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([
-          { user: "default", PORKBUN_API_KEY: "pk1_acct_default", PORKBUN_SECRET_API_KEY: "sk1_acct_default" },
+          { user: "default", PORKBUN_API_KEY: "pk1_file_default", PORKBUN_SECRET_API_KEY: "sk1_file_default" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
@@ -232,16 +212,18 @@ describe("porkbunRequest", () => {
       await porkbunRequest("/ping");
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(body.apikey).toBe("pk1_acct_default");
+      expect(body.apikey).toBe("pk1_file_default");
     });
 
-    it("falls back to top-level env vars when PORKBUN_ACCOUNTS has no default", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+    it("falls back to top-level env vars when the file has no default", async () => {
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([
           { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       mockFetch.mockResolvedValue({
         ok: true,
@@ -255,53 +237,71 @@ describe("porkbunRequest", () => {
     });
 
     it("throws a helpful error when an unknown user is requested", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+      const file = join(tmp, "accounts.json");
+      writeFileSync(
+        file,
         JSON.stringify([
           { user: "alice", PORKBUN_API_KEY: "pk1_alice", PORKBUN_SECRET_API_KEY: "sk1_alice" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       await expect(porkbunRequest("/ping", undefined, "ghost")).rejects.toThrow(
         /No Porkbun credentials configured for user "ghost"/
       );
     });
 
-    it("throws when PORKBUN_ACCOUNTS is not valid JSON", async () => {
-      vi.stubEnv("PORKBUN_ACCOUNTS", "not-json");
+    it("throws when the file path does not exist", async () => {
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", join(tmp, "does-not-exist.json"));
       _resetAccountsCache();
       await expect(porkbunRequest("/ping")).rejects.toThrow(
-        /PORKBUN_ACCOUNTS is not valid JSON/
+        /PORKBUN_ACCOUNTS_FILE could not be read/
       );
     });
 
-    it("throws when PORKBUN_ACCOUNTS is not an array", async () => {
-      vi.stubEnv("PORKBUN_ACCOUNTS", JSON.stringify({ user: "alice" }));
+    it("throws when the file is not valid JSON", async () => {
+      const file = join(tmp, "bad.json");
+      writeFileSync(file, "not-json");
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       await expect(porkbunRequest("/ping")).rejects.toThrow(
-        /PORKBUN_ACCOUNTS must be a JSON array/
+        /PORKBUN_ACCOUNTS_FILE is not valid JSON/
+      );
+    });
+
+    it("throws when the file is not a JSON array", async () => {
+      const file = join(tmp, "wrong.json");
+      writeFileSync(file, JSON.stringify({ user: "alice" }));
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
+      _resetAccountsCache();
+      await expect(porkbunRequest("/ping")).rejects.toThrow(
+        /PORKBUN_ACCOUNTS_FILE must be a JSON array/
       );
     });
 
     it("throws when an entry is missing api key fields", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+      const file = join(tmp, "missing.json");
+      writeFileSync(
+        file,
         JSON.stringify([{ user: "alice", PORKBUN_API_KEY: "pk1_alice" }])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       await expect(porkbunRequest("/ping", undefined, "alice")).rejects.toThrow(
         /missing PORKBUN_API_KEY or PORKBUN_SECRET_API_KEY/
       );
     });
 
-    it("throws when PORKBUN_ACCOUNTS has duplicate users", async () => {
-      vi.stubEnv(
-        "PORKBUN_ACCOUNTS",
+    it("throws when the file has duplicate users", async () => {
+      const file = join(tmp, "dupes.json");
+      writeFileSync(
+        file,
         JSON.stringify([
           { user: "alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
           { user: "Alice", PORKBUN_API_KEY: "b", PORKBUN_SECRET_API_KEY: "y" },
         ])
       );
+      vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
       _resetAccountsCache();
       await expect(porkbunRequest("/ping")).rejects.toThrow(
         /duplicate user "alice"/
@@ -380,14 +380,18 @@ describe("porkbunRequestNoAuth", () => {
 });
 
 describe("listConfiguredUsers", () => {
+  let tmp: string;
+
   beforeEach(() => {
     clearPorkbunEnv();
     _resetAccountsCache();
+    tmp = mkdtempSync(join(tmpdir(), "porkbun-mcp-test-"));
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     _resetAccountsCache();
+    rmSync(tmp, { recursive: true, force: true });
   });
 
   it("returns empty list when nothing is configured", () => {
@@ -407,40 +411,33 @@ describe("listConfiguredUsers", () => {
     expect(listConfiguredUsers()).not.toContain("default");
   });
 
-  it("includes users from PORKBUN_ACCOUNTS (lowercased)", () => {
-    vi.stubEnv(
-      "PORKBUN_ACCOUNTS",
+  it("includes users from PORKBUN_ACCOUNTS_FILE (lowercased)", () => {
+    const file = join(tmp, "accounts.json");
+    writeFileSync(
+      file,
       JSON.stringify([
         { user: "Alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
         { user: "BOB", PORKBUN_API_KEY: "b", PORKBUN_SECRET_API_KEY: "y" },
       ])
     );
+    vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
     _resetAccountsCache();
     const users = listConfiguredUsers();
     expect(users).toContain("alice");
     expect(users).toContain("bob");
   });
 
-  it("includes users from suffixed env-var pairs", () => {
-    vi.stubEnv("PORKBUN_API_KEY_ALICE", "pk1");
-    vi.stubEnv("PORKBUN_SECRET_API_KEY_ALICE", "sk1");
-    vi.stubEnv("PORKBUN_API_KEY_BOB", "pk1");
-    vi.stubEnv("PORKBUN_SECRET_API_KEY_BOB", "sk1");
-    _resetAccountsCache();
-    const users = listConfiguredUsers();
-    expect(users).toContain("alice");
-    expect(users).toContain("bob");
-  });
-
-  it("merges PORKBUN_ACCOUNTS users with top-level default", () => {
+  it("merges users from the file with the top-level default", () => {
     vi.stubEnv("PORKBUN_API_KEY", "pk1");
     vi.stubEnv("PORKBUN_SECRET_API_KEY", "sk1");
-    vi.stubEnv(
-      "PORKBUN_ACCOUNTS",
+    const file = join(tmp, "accounts.json");
+    writeFileSync(
+      file,
       JSON.stringify([
         { user: "alice", PORKBUN_API_KEY: "a", PORKBUN_SECRET_API_KEY: "x" },
       ])
     );
+    vi.stubEnv("PORKBUN_ACCOUNTS_FILE", file);
     _resetAccountsCache();
     const users = listConfiguredUsers();
     expect(users).toContain("default");

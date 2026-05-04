@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const BASE_URL = "https://api.porkbun.com/api/json/v3";
 
 interface Account {
@@ -18,24 +20,54 @@ let cachedAccounts: Map<string, Account> | null = null;
 let cachedSnapshot: string | undefined;
 
 function envSnapshot(): string {
-  // Used to detect env changes between calls (mainly in tests). Hashing the
-  // raw values is fine because env vars are short.
-  const parts: string[] = [];
-  for (const k of Object.keys(process.env).sort()) {
-    if (k === "PORKBUN_ACCOUNTS" || k.startsWith("PORKBUN_API_KEY") || k.startsWith("PORKBUN_SECRET_API_KEY")) {
-      parts.push(`${k}=${process.env[k] ?? ""}`);
-    }
+  return [
+    `PORKBUN_API_KEY=${process.env.PORKBUN_API_KEY ?? ""}`,
+    `PORKBUN_SECRET_API_KEY=${process.env.PORKBUN_SECRET_API_KEY ?? ""}`,
+    `PORKBUN_ACCOUNTS_FILE=${process.env.PORKBUN_ACCOUNTS_FILE ?? ""}`,
+  ].join("\n");
+}
+
+function parseAccountsJson(raw: string, source: string): Map<string, Account> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `${source} is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
-  return parts.join("\n");
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${source} must be a JSON array of account objects`);
+  }
+  const out = new Map<string, Account>();
+  for (const [i, entry] of parsed.entries()) {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`${source}[${i}] is not an object`);
+    }
+    const acc = entry as ParsedAccount;
+    const apiKey = acc.PORKBUN_API_KEY ?? acc.apiKey;
+    const secretApiKey = acc.PORKBUN_SECRET_API_KEY ?? acc.secretApiKey;
+    if (!apiKey || !secretApiKey) {
+      throw new Error(
+        `${source}[${i}] is missing PORKBUN_API_KEY or PORKBUN_SECRET_API_KEY`
+      );
+    }
+    const user = (acc.user ?? "default").trim().toLowerCase();
+    if (out.has(user)) {
+      throw new Error(`${source} contains duplicate user "${user}"`);
+    }
+    out.set(user, { user, apiKey, secretApiKey });
+  }
+  return out;
 }
 
 /**
- * Build the account map from all supported configuration sources, merged in
+ * Build the account map from supported configuration sources, merged in
  * this order (later sources override earlier ones for the same user):
  *
- *   1. Top-level PORKBUN_API_KEY / PORKBUN_SECRET_API_KEY → "default" account
- *   2. Suffixed PORKBUN_API_KEY_<USER> / PORKBUN_SECRET_API_KEY_<USER>
- *   3. PORKBUN_ACCOUNTS JSON array (highest priority)
+ *   1. Top-level `PORKBUN_API_KEY` / `PORKBUN_SECRET_API_KEY` → "default" account
+ *   2. `PORKBUN_ACCOUNTS_FILE` — path to a JSON file containing
+ *      `[{user, PORKBUN_API_KEY, PORKBUN_SECRET_API_KEY}, ...]`
  *
  * User identifiers are lowercased throughout.
  */
@@ -54,51 +86,19 @@ function parseAccounts(): Map<string, Account> {
     });
   }
 
-  // 2. Suffixed env-var pairs: PORKBUN_API_KEY_<USER> / PORKBUN_SECRET_API_KEY_<USER>
-  for (const envKey of Object.keys(process.env)) {
-    const m = envKey.match(/^PORKBUN_API_KEY_(.+)$/);
-    if (!m) continue;
-    const suffix = m[1];
-    const apiKey = process.env[envKey];
-    const secretApiKey = process.env[`PORKBUN_SECRET_API_KEY_${suffix}`];
-    if (!apiKey || !secretApiKey) continue;
-    const user = suffix.toLowerCase();
-    map.set(user, { user, apiKey, secretApiKey });
-  }
-
-  // 3. PORKBUN_ACCOUNTS JSON array (overrides anything above)
-  const raw = process.env.PORKBUN_ACCOUNTS;
-  if (raw && raw.trim()) {
-    let parsed: unknown;
+  // 2. PORKBUN_ACCOUNTS_FILE — path to a JSON file containing the array
+  const filePath = process.env.PORKBUN_ACCOUNTS_FILE;
+  if (filePath && filePath.trim()) {
+    let raw: string;
     try {
-      parsed = JSON.parse(raw);
+      raw = readFileSync(filePath.trim(), "utf8");
     } catch (err) {
       throw new Error(
-        `PORKBUN_ACCOUNTS is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+        `PORKBUN_ACCOUNTS_FILE could not be read at "${filePath}": ${err instanceof Error ? err.message : String(err)}`
       );
     }
-    if (!Array.isArray(parsed)) {
-      throw new Error("PORKBUN_ACCOUNTS must be a JSON array of account objects");
-    }
-    const seen = new Set<string>();
-    for (const [i, entry] of parsed.entries()) {
-      if (!entry || typeof entry !== "object") {
-        throw new Error(`PORKBUN_ACCOUNTS[${i}] is not an object`);
-      }
-      const acc = entry as ParsedAccount;
-      const apiKey = acc.PORKBUN_API_KEY ?? acc.apiKey;
-      const secretApiKey = acc.PORKBUN_SECRET_API_KEY ?? acc.secretApiKey;
-      if (!apiKey || !secretApiKey) {
-        throw new Error(
-          `PORKBUN_ACCOUNTS[${i}] is missing PORKBUN_API_KEY or PORKBUN_SECRET_API_KEY`
-        );
-      }
-      const user = (acc.user ?? "default").trim().toLowerCase();
-      if (seen.has(user)) {
-        throw new Error(`PORKBUN_ACCOUNTS contains duplicate user "${user}"`);
-      }
-      seen.add(user);
-      map.set(user, { user, apiKey, secretApiKey });
+    for (const [user, acc] of parseAccountsJson(raw, "PORKBUN_ACCOUNTS_FILE")) {
+      map.set(user, acc);
     }
   }
 
@@ -115,7 +115,8 @@ function resolveAccount(user?: string): Account {
     if (!user || key === "default") {
       throw new Error(
         "No default Porkbun credentials configured. Set PORKBUN_API_KEY and " +
-          "PORKBUN_SECRET_API_KEY (or supply a default entry via PORKBUN_ACCOUNTS)."
+          "PORKBUN_SECRET_API_KEY (or include a default entry in the file " +
+          "referenced by PORKBUN_ACCOUNTS_FILE)."
       );
     }
     const known = [...accounts.keys()].join(", ") || "(none)";
@@ -130,7 +131,7 @@ function resolveAccount(user?: string): Account {
  * Returns the list of configured user identifiers, lowercased.
  *
  * Includes "default" when default credentials are present, plus any users
- * defined via the PORKBUN_ACCOUNTS JSON array.
+ * defined in the file referenced by `PORKBUN_ACCOUNTS_FILE`.
  */
 export function listConfiguredUsers(): string[] {
   return [...parseAccounts().keys()];
